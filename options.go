@@ -2,6 +2,8 @@ package lldpd
 
 import (
 	"net"
+
+	"github.com/mdlayher/lldp"
 )
 
 // InterfaceFilterFn is the function used to filter interface
@@ -22,18 +24,18 @@ func InterfaceFilter(fn InterfaceFilterFn) Option {
 
 // ReplyUnicast instructs the daemon to send lldp PDU's to the
 // src mac address, instead of the lldp broadcast address
-func ReplyUnicast() Option {
-	return func(l *LLDPD) error {
-		l.replyUnicast = true
-		return nil
-	}
-}
+// func ReplyUnicast() Option {
+// 	return func(l *LLDPD) error {
+// 		l.replyUnicast = true
+// 		return nil
+// 	}
+// }
 
 // SourceAddress sets the ethernet source address to use
 // for LLDP PDU's
-func SourceAddress(addr net.HardwareAddr) Option {
+func SourceAddress(fn SetSourceAddressFn) Option {
 	return func(l *LLDPD) error {
-		l.sourceAddress = addr
+		l.sourceAddress = fn
 		return nil
 	}
 }
@@ -42,6 +44,16 @@ func SourceAddress(addr net.HardwareAddr) Option {
 // port description. This function is called once, on first receive
 // of an LLDP PDU on a port and the reply is cached untill restart.
 type PortLookupFn func(*net.Interface) string
+
+type HandleInputFn func(*Message) (*Message, error)
+
+type SetSourceAddressFn func(*net.Interface) ([]byte, lldp.ChassisIDSubtype)
+
+type ErrListenFn func(err error, ifi *net.Interface)
+
+func defaultSetSourceAddressFn(*net.Interface) ([]byte, lldp.ChassisIDSubtype) {
+	return []byte{0xde, 0xad, 0xbe, 0xef, 0xde, 0xad}, lldp.ChassisIDSubtypeMACAddress
+}
 
 var defaultPortLookupFn PortLookupFn = func(ifi *net.Interface) string { return ifi.Name }
 
@@ -54,10 +66,26 @@ func PortLookup(fn PortLookupFn) Option {
 	}
 }
 
+func OnListenErr(fn ErrListenFn) Option {
+	return func(l *LLDPD) error {
+		l.errListenFn = fn
+		return nil
+	}
+}
+
 // Option is a functional option handler for LLDPD.
 type Option func(*LLDPD) error
 
 // SetOption runs a functional option against LLDPD.
 func (p *LLDPD) SetOption(option Option) error {
 	return option(p)
+}
+
+// PortLookup allows a user to use a different port description
+// lookup mechanism
+func HandleInput(fn HandleInputFn) Option {
+	return func(l *LLDPD) error {
+		l.handleInputFn = fn
+		return nil
+	}
 }
