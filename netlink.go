@@ -1,14 +1,13 @@
 package lldpd
 
 import (
-	"net"
-
+	"github.com/extrame/raw"
 	"github.com/golang/glog"
 )
 
 type nlListener struct {
 	Messages chan *linkMessage
-	list     map[uint32]int32
+	list     map[string]int32
 }
 
 // NewNLListener listens on rtnetlink for addition and removal
@@ -16,7 +15,7 @@ type nlListener struct {
 func NewNLListener() *nlListener {
 	l := &nlListener{
 		Messages: make(chan *linkMessage, 64),
-		list:     make(map[uint32]int32),
+		list:     make(map[string]int32),
 	}
 	return l
 }
@@ -32,7 +31,7 @@ func (l *nlListener) Start() {
 }
 
 type linkMessage struct {
-	ifi *net.Interface
+	ifi raw.Interface
 	op  linkOp
 }
 

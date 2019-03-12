@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/extrame/raw"
 	"github.com/golang/glog"
 )
 
@@ -33,21 +34,21 @@ func (l *nlListener) Listen() error {
 
 func (l *nlListener) Search() error {
 	var random = rand.Int31n(100000)
-	if ifis, err := net.Interfaces(); err == nil {
+	if ifis, err := raw.Interfaces(); err == nil {
 		for index := 0; index < len(ifis); index++ {
 			var ifi = ifis[index]
-			if ifi.Flags&net.FlagUp != 0 {
-				if _, ok := l.list[uint32(ifi.Index)]; !ok {
-					if len(ifi.HardwareAddr) != 0 {
-						l.Messages <- &linkMessage{
-							ifi: &ifi,
-							op:  IF_ADD,
-						}
-						glog.Info("msg", "netlink reports new interface", "ifname", ifi.Name, "ifindex", ifi.Index)
-					}
+			// if ifi.Flags()&net.FlagUp != 0 {
+			if _, ok := l.list[ifi.Name()]; !ok {
+				// if len(ifi.HardwareAddr) != 0 {
+				l.Messages <- &linkMessage{
+					ifi: ifi,
+					op:  IF_ADD,
 				}
-				l.list[uint32(ifi.Index)] = random
+				glog.Info("msg", "netlink reports new interface", "ifname", ifi.Name, "ifindex", ifi.Index)
+				// }
 			}
+			l.list[ifi.Name()] = random
+			// }
 		}
 	} else {
 		return err
@@ -55,7 +56,7 @@ func (l *nlListener) Search() error {
 	for i, set := range l.list {
 		if set != random {
 			//is not refreshed
-			if ifi, err := net.InterfaceByIndex(int(i)); err == nil {
+			if ifi, err := raw.InterfaceByName(i); err == nil {
 				l.Messages <- &linkMessage{
 					ifi: ifi,
 					op:  IF_DEL,

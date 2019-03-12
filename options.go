@@ -1,8 +1,7 @@
 package lldpd
 
 import (
-	"net"
-
+	"github.com/extrame/raw"
 	"github.com/mdlayher/lldp"
 )
 
@@ -10,9 +9,9 @@ import (
 // This function is called once for every interface the daemon
 // can potentially listen on. It should return true if the
 // daemon should listen on the interface.
-type InterfaceFilterFn func(*net.Interface) bool
+type InterfaceFilterFn func(raw.Interface) bool
 
-var defaultInterfaceFilterFn InterfaceFilterFn = func(_ *net.Interface) bool { return true }
+var defaultInterfaceFilterFn InterfaceFilterFn = func(_ raw.Interface) bool { return true }
 
 // InterfaceFilter allows a user to filter interfaces
 func InterfaceFilter(fn InterfaceFilterFn) Option {
@@ -43,19 +42,19 @@ func SourceAddress(fn SetSourceAddressFn) Option {
 // PortLookupFn is the function used to respond with a different
 // port description. This function is called once, on first receive
 // of an LLDP PDU on a port and the reply is cached untill restart.
-type PortLookupFn func(*net.Interface) string
+type PortLookupFn func(raw.Interface) string
 
 type HandleInputFn func(*Message) (*Message, error)
 
-type SetSourceAddressFn func(*net.Interface) ([]byte, lldp.ChassisIDSubtype)
+type SetSourceAddressFn func(raw.Interface) ([]byte, lldp.ChassisIDSubtype)
 
-type ErrListenFn func(err error, ifi *net.Interface)
+type ErrListenFn func(err error, ifi raw.Interface)
 
-func defaultSetSourceAddressFn(*net.Interface) ([]byte, lldp.ChassisIDSubtype) {
+func defaultSetSourceAddressFn(raw.Interface) ([]byte, lldp.ChassisIDSubtype) {
 	return []byte{0xde, 0xad, 0xbe, 0xef, 0xde, 0xad}, lldp.ChassisIDSubtypeMACAddress
 }
 
-var defaultPortLookupFn PortLookupFn = func(ifi *net.Interface) string { return ifi.Name }
+var defaultPortLookupFn PortLookupFn = func(ifi raw.Interface) string { return ifi.Name() }
 
 // PortLookup allows a user to use a different port description
 // lookup mechanism

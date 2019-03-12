@@ -8,9 +8,9 @@ import (
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
+	"github.com/extrame/raw"
 	"github.com/mdlayher/ethernet"
 	"github.com/mdlayher/lldp"
-	"github.com/mdlayher/raw"
 )
 
 //sudo ip maddr add 01:80:c2:00:00:0e dev eth0
@@ -72,7 +72,7 @@ func (l *LLDPD) startNLLoop() {
 				switch info.op {
 				case IF_ADD:
 					if l.filterFn(info.ifi) {
-						glog.Error("start listen on ", info.ifi.Name)
+						glog.Error("start listen on ", info.ifi.Name())
 						go l.ListenOn(info.ifi)
 					}
 				case IF_DEL:
@@ -85,24 +85,24 @@ func (l *LLDPD) startNLLoop() {
 
 // ListenOn will listen on the specified interface for
 // LLDP PDU's
-func (l *LLDPD) ListenOn(ifi *net.Interface) {
+func (l *LLDPD) ListenOn(ifi raw.Interface) {
 	var err error
-	if _, ok := l.listeners.Load(ifi.Index); !ok {
+	if _, ok := l.listeners.Load(ifi.Name()); !ok {
 		// conn, err := raw.ListenPacket(ifi, uint16(0x3), nil)
 		var conn *raw.Conn
 		conn, err = raw.ListenPacket(ifi, uint16(lldp.EtherType), nil)
 		if err != nil {
-			err = errors.Wrapf(err, "in listen on [%d]%s", ifi.Index, ifi.Name)
+			err = errors.Wrapf(err, "in listen on [%d]%s", ifi.Index(), ifi.Name())
 			goto finish
 		}
 
-		l.listeners.Store(ifi.Index, &packetConn{
+		l.listeners.Store(ifi.Name(), &packetConn{
 			conn: conn,
 		})
 
 		glog.Info("msg", "started listener on interface", "ifname", ifi.Name, "ifindex", ifi.Index)
 
-		b := make([]byte, ifi.MTU)
+		b := make([]byte, ifi.MTU())
 		for {
 			var n int
 			var src net.Addr
@@ -160,16 +160,16 @@ finish:
 }
 
 // CancelListenOn will stop listening on the interface
-func (l *LLDPD) CancelListenOn(ifi *net.Interface) {
-	if pconn, ok := l.listeners.Load(ifi.Index); ok {
+func (l *LLDPD) CancelListenOn(ifi raw.Interface) {
+	if pconn, ok := l.listeners.Load(ifi.Name()); ok {
 		pconn.(*packetConn).conn.Close()
-		l.listeners.Delete(ifi.Index)
+		l.listeners.Delete(ifi.Name())
 		glog.Info("msg", "closed listener on interface", "ifname", ifi.Name, "ifindex", ifi.Index)
 	}
 }
 
 func (l *LLDPD) Send(msg *Message) error {
-	if _, ok := l.listeners.Load(msg.Ifi.Index); !ok {
+	if _, ok := l.listeners.Load(msg.Ifi.Name()); !ok {
 		return errors.New("not listened on this interface")
 	}
 	l.sendChannel <- msg
@@ -184,7 +184,7 @@ func (l *LLDPD) Listen() error {
 		for {
 			select {
 			case msg := <-l.sendChannel:
-				pconnRaw, ok := l.listeners.Load(msg.Ifi.Index)
+				pconnRaw, ok := l.listeners.Load(msg.Ifi.Name())
 
 				if !ok {
 					continue
@@ -264,5 +264,5 @@ type Message struct {
 	From  *raw.Addr
 	To    *raw.Addr
 	Frame *lldp.Frame
-	Ifi   *net.Interface
+	Ifi   raw.Interface
 }
