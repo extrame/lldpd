@@ -4,7 +4,9 @@ import (
 	"net"
 	"syscall"
 
-	"github.com/golang/glog"
+	"github.com/extrame/raw"
+	log "github.com/sirupsen/logrus"
+
 	"github.com/jsimonetti/rtnetlink"
 	"github.com/mdlayher/netlink"
 	"github.com/pkg/errors"
@@ -40,32 +42,29 @@ func (l *nlListener) Listen() error {
 				}
 
 				if omsgs[i].Header.Type == rtnetlink.RTM_NEWLINK {
-					if _, ok := l.list[m.Index]; !ok {
+					if _, ok := l.list[m.Attributes.Name]; !ok {
 
 						link, _ := net.InterfaceByIndex(int(m.Index))
 						l.Messages <- &linkMessage{
-							ifi: link,
+							ifi: raw.NewInterface(link),
 							op:  IF_ADD,
 						}
 
-						l.list[m.Index] = 0
-						glog.Info("msg", "netlink reports new interface", "ifname", m.Attributes.Name, "ifindex", m.Index)
+						l.list[m.Attributes.Name] = 0
+						log.Info("msg", "netlink reports new interface", "ifname", m.Attributes.Name, "ifindex", m.Index)
 					}
 					continue
 				}
 				if omsgs[i].Header.Type == rtnetlink.RTM_DELLINK {
-					if _, ok := l.list[m.Index]; ok {
+					if _, ok := l.list[m.Attributes.Name]; ok {
 
 						l.Messages <- &linkMessage{
-							ifi: &net.Interface{
-								Index: int(m.Index),
-								Name:  m.Attributes.Name,
-							},
-							op: IF_DEL,
+							ifi: raw.NewInterfaceDelegate(int(m.Index), m.Attributes.Name),
+							op:  IF_DEL,
 						}
 
-						delete(l.list, m.Index)
-						glog.Info("msg", "netlink reports deleted interface", "ifname", m.Attributes.Name, "ifindex", m.Index)
+						delete(l.list, m.Attributes.Name)
+						log.Info("msg", "netlink reports deleted interface", "ifname", m.Attributes.Name, "ifindex", m.Index)
 					}
 					continue
 				}

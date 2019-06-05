@@ -50,6 +50,8 @@ type SetSourceAddressFn func(raw.Interface) ([]byte, lldp.ChassisIDSubtype)
 
 type ErrListenFn func(err error, ifi raw.Interface)
 
+type SuccessListenFn func(ifi raw.Interface)
+
 func defaultSetSourceAddressFn(raw.Interface) ([]byte, lldp.ChassisIDSubtype) {
 	return []byte{0xde, 0xad, 0xbe, 0xef, 0xde, 0xad}, lldp.ChassisIDSubtypeMACAddress
 }
@@ -68,6 +70,13 @@ func PortLookup(fn PortLookupFn) Option {
 func OnListenErr(fn ErrListenFn) Option {
 	return func(l *LLDPD) error {
 		l.errListenFn = fn
+		return nil
+	}
+}
+
+func OnListenSuccess(fn SuccessListenFn) Option {
+	return func(l *LLDPD) error {
+		l.successListenFn = fn
 		return nil
 	}
 }

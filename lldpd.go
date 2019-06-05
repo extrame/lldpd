@@ -5,8 +5,8 @@ import (
 	"net"
 	"sync"
 
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/extrame/raw"
 	"github.com/mdlayher/ethernet"
@@ -23,11 +23,12 @@ var LldpMulticaseAddress = []byte{0x01, 0x80, 0xc2, 0x00, 0x00, 0x0e}
 // It will always listen passively. This means, it will
 // only send LLDP PDU's in response to a received PDU.
 type LLDPD struct {
-	filterFn      InterfaceFilterFn
-	portLookupFn  PortLookupFn
-	handleInputFn HandleInputFn
-	sourceAddress SetSourceAddressFn //net.HardwareAddr
-	errListenFn   ErrListenFn
+	filterFn        InterfaceFilterFn
+	portLookupFn    PortLookupFn
+	handleInputFn   HandleInputFn
+	sourceAddress   SetSourceAddressFn //net.HardwareAddr
+	errListenFn     ErrListenFn
+	successListenFn SuccessListenFn
 
 	recvChannel chan *Message
 	sendChannel chan *Message
@@ -72,7 +73,7 @@ func (l *LLDPD) startNLLoop() {
 				switch info.op {
 				case IF_ADD:
 					if l.filterFn(info.ifi) {
-						glog.Error("start listen on ", info.ifi.Name())
+						log.Error("start listen on ", info.ifi.Name())
 						go l.ListenOn(info.ifi)
 					}
 				case IF_DEL:
@@ -100,9 +101,14 @@ func (l *LLDPD) ListenOn(ifi raw.Interface) {
 			conn: conn,
 		})
 
-		glog.Info("msg", "started listener on interface", "ifname", ifi.Name, "ifindex", ifi.Index)
+		if l.successListenFn != nil {
+			l.successListenFn(ifi)
+		}
+
+		log.Info("msg", "started listener on interface", "ifname", ifi.Name(), "ifindex", ifi.Index())
 
 		b := make([]byte, ifi.MTU())
+
 		for {
 			var n int
 			var src net.Addr
@@ -116,13 +122,13 @@ func (l *LLDPD) ListenOn(ifi raw.Interface) {
 				if isShouldFinishError(err) {
 					goto finish
 				}
-				glog.Error("msg", "error read from interface", "ifname", ifi.Name, "ifindex", ifi.Index, "error", err)
+				log.Error("msg", "error read from interface", "ifname", ifi.Name(), "ifindex", ifi.Index(), "error", err)
 				continue
 			}
 		handle:
 			var frame ethernet.Frame
 			frame.UnmarshalBinary(b[:n])
-			glog.Info("lldp package ", "received ", "len ", n)
+			log.Info("lldp package ", "received ", "len ", n)
 			if frame.EtherType == lldp.EtherType {
 				var lldpFrame lldp.Frame
 				if err = lldpFrame.UnmarshalBinary(frame.Payload); err == nil {
@@ -143,16 +149,20 @@ func (l *LLDPD) ListenOn(ifi raw.Interface) {
 							To:    &raw.Addr{HardwareAddr: frame.Destination},
 						}
 					} else {
-						glog.Error(err)
+						log.Error(err)
 					}
 				}
 			}
 			//spew.Dump(src, err, b[:n])
 		}
+	} else {
+		if l.successListenFn != nil {
+			l.successListenFn(ifi)
+		}
 	}
 finish:
 	if err != nil {
-		err = errors.Wrapf(err, "in listen on [%d]%s", ifi.Index, ifi.Name)
+		err = errors.Wrapf(err, "in listen on [%d]%s", ifi.Index(), ifi.Name())
 		if l.errListenFn != nil {
 			l.errListenFn(err, ifi)
 		}
@@ -164,7 +174,7 @@ func (l *LLDPD) CancelListenOn(ifi raw.Interface) {
 	if pconn, ok := l.listeners.Load(ifi.Name()); ok {
 		pconn.(*packetConn).conn.Close()
 		l.listeners.Delete(ifi.Name())
-		glog.Info("msg", "closed listener on interface", "ifname", ifi.Name, "ifindex", ifi.Index)
+		log.Info("msg", "closed listener on interface", "ifname", ifi.Name(), "ifindex", ifi.Index())
 	}
 }
 
@@ -200,11 +210,15 @@ func (l *LLDPD) Listen() error {
 
 				b := l.packetFor(msg)
 
-				glog.Info("send msg ", msg, " on ", msg.Ifi.Name)
+				log.Info("send msg ", msg, " on ", msg.Ifi.Name())
 
 				_, err := pconn.conn.WriteTo(b, msg.From)
 				if err != nil {
-					glog.Error("msg", "error sending pdu out on interface", "name", msg.Ifi.Name, "index", msg.Ifi.Index, "error", err)
+					log.Errorf("error sending pdu out on interface [%d](%s) by [%T]%v", msg.Ifi.Index(), msg.Ifi.Name(), err, err)
+					if err.Error() == "network is down" {
+						l.CancelListenOn(msg.Ifi)
+						break
+					}
 				}
 				continue
 			}
@@ -214,13 +228,13 @@ func (l *LLDPD) Listen() error {
 	for {
 		select {
 		case msg := <-l.recvChannel:
-			glog.Info("msg", "incoming pdu on interface", "name", msg.Ifi.Name, "index", msg.Ifi.Index)
+			log.Info("msg", "incoming pdu on interface", "name", msg.Ifi.Name, "index", msg.Ifi.Index)
 			if resp, err := l.handleInputFn(msg); err == nil {
 				if resp != nil {
 					l.sendChannel <- resp
 				}
 			} else {
-				glog.Info("msg", "respond input error", "error", err)
+				log.Info("msg", "respond input error", "error", err)
 			}
 			continue
 		}
@@ -241,7 +255,7 @@ func (l *LLDPD) packetFor(msg *Message) []byte {
 
 	b, err := msg.Frame.MarshalBinary()
 	if err != nil {
-		glog.Error("msg", "error marshalling lldp frame", "error", err)
+		log.Error("msg", "error marshalling lldp frame", "error", err)
 		return nil
 	}
 
@@ -254,7 +268,7 @@ func (l *LLDPD) packetFor(msg *Message) []byte {
 	frame, err := f.MarshalBinary()
 
 	if err != nil {
-		glog.Error("msg", "error marshalling ethernet frame", "error", err)
+		log.Error("msg", "error marshalling ethernet frame", "error", err)
 		return nil
 	}
 	return frame
