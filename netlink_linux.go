@@ -23,7 +23,7 @@ func (l *nlListener) Listen() error {
 
 	//send request for current list of interfaces
 	req := &rtnetlink.LinkMessage{}
-	nl.Send(req, unix.RTM_GETLINK, netlink.HeaderFlagsRequest|netlink.HeaderFlagsDump)
+	nl.Send(req, unix.RTM_GETLINK, netlink.Request|netlink.Dump)
 
 	for {
 		msgs, omsgs, err := nl.Receive()
