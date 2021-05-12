@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/extrame/raw"
-	"github.com/golang/glog"
 )
 
 type bpf struct {
@@ -44,7 +43,7 @@ func (l *nlListener) Search() error {
 					ifi: ifi,
 					op:  IF_ADD,
 				}
-				glog.Info("msg", "netlink reports new interface", "ifname", ifi.Name, "ifindex", ifi.Index)
+				l.log.Info("msg", "netlink reports new interface", "ifname", ifi.Name, "ifindex", ifi.Index)
 				// }
 			}
 			l.list[ifi.Name()] = random

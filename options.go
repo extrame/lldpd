@@ -81,6 +81,13 @@ func OnListenSuccess(fn SuccessListenFn) Option {
 	}
 }
 
+func SetLogger(log Logger) Option {
+	return func(l *LLDPD) error {
+		l.log = log
+		return nil
+	}
+}
+
 // Option is a functional option handler for LLDPD.
 type Option func(*LLDPD) error
 

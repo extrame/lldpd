@@ -5,7 +5,6 @@ import (
 	"syscall"
 
 	"github.com/extrame/raw"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/jsimonetti/rtnetlink"
 	"github.com/mdlayher/netlink"
@@ -51,7 +50,7 @@ func (l *nlListener) Listen() error {
 						}
 
 						l.list[m.Attributes.Name] = 0
-						log.Info("msg", "netlink reports new interface", "ifname", m.Attributes.Name, "ifindex", m.Index)
+						l.log.Info("msg", "netlink reports new interface", "ifname", m.Attributes.Name, "ifindex", m.Index)
 					}
 					continue
 				}
@@ -64,7 +63,7 @@ func (l *nlListener) Listen() error {
 						}
 
 						delete(l.list, m.Attributes.Name)
-						log.Info("msg", "netlink reports deleted interface", "ifname", m.Attributes.Name, "ifindex", m.Index)
+						l.log.Info("msg", "netlink reports deleted interface", "ifname", m.Attributes.Name, "ifindex", m.Index)
 					}
 					continue
 				}

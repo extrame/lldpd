@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/extrame/raw"
 	"github.com/mdlayher/ethernet"
@@ -36,7 +35,7 @@ type LLDPD struct {
 	// listenersLock sync.RWMutex
 	listeners sync.Map
 
-	// log Logger
+	log Logger
 }
 
 type packetConn struct {
@@ -59,11 +58,15 @@ func New(opts ...Option) *LLDPD {
 		l.SetOption(opt)
 	}
 
+	if l.log == nil {
+		l.log = &NormalLoger{}
+	}
+
 	return l
 }
 
 func (l *LLDPD) startNLLoop() {
-	nl := NewNLListener()
+	nl := NewNLListener(l.log)
 	nl.Start()
 
 	go func() {
@@ -73,7 +76,7 @@ func (l *LLDPD) startNLLoop() {
 				switch info.op {
 				case IF_ADD:
 					if l.filterFn(info.ifi) {
-						log.Error("start listen on ", info.ifi.Name())
+						l.log.Error("start listen on ", info.ifi.Name())
 						go l.ListenOn(info.ifi)
 					}
 				case IF_DEL:
@@ -105,7 +108,7 @@ func (l *LLDPD) ListenOn(ifi raw.Interface) {
 			l.successListenFn(ifi)
 		}
 
-		log.Info("msg", "started listener on interface", "ifname", ifi.Name(), "ifindex", ifi.Index())
+		l.log.Info("msg", "started listener on interface", "ifname", ifi.Name(), "ifindex", ifi.Index())
 
 		b := make([]byte, ifi.MTU())
 
@@ -122,13 +125,13 @@ func (l *LLDPD) ListenOn(ifi raw.Interface) {
 				if isShouldFinishError(err) {
 					goto finish
 				}
-				log.Error("msg", "error read from interface", "ifname", ifi.Name(), "ifindex", ifi.Index(), "error", err)
+				l.log.Error("msg", "error read from interface", "ifname", ifi.Name(), "ifindex", ifi.Index(), "error", err)
 				continue
 			}
 		handle:
 			var frame ethernet.Frame
 			frame.UnmarshalBinary(b[:n])
-			log.Info("lldp package ", "received ", "len ", n)
+			l.log.Info("lldp package ", "received ", "len ", n)
 			if frame.EtherType == lldp.EtherType {
 				var lldpFrame lldp.Frame
 				if err = lldpFrame.UnmarshalBinary(frame.Payload); err == nil {
@@ -149,7 +152,7 @@ func (l *LLDPD) ListenOn(ifi raw.Interface) {
 							To:    &raw.Addr{HardwareAddr: frame.Destination},
 						}
 					} else {
-						log.Error(err)
+						l.log.Error(err)
 					}
 				}
 			}
@@ -174,7 +177,7 @@ func (l *LLDPD) CancelListenOn(ifi raw.Interface) {
 	if pconn, ok := l.listeners.Load(ifi.Name()); ok {
 		pconn.(*packetConn).conn.Close()
 		l.listeners.Delete(ifi.Name())
-		log.Info("msg", "closed listener on interface", "ifname", ifi.Name(), "ifindex", ifi.Index())
+		l.log.Info("msg", "closed listener on interface", "ifname", ifi.Name(), "ifindex", ifi.Index())
 	}
 }
 
@@ -210,11 +213,11 @@ func (l *LLDPD) Listen() error {
 
 				b := l.packetFor(msg)
 
-				log.Info("send msg ", msg, " on ", msg.Ifi.Name())
+				l.log.Info("send msg ", msg, " on ", msg.Ifi.Name())
 
 				_, err := pconn.conn.WriteTo(b, msg.From)
 				if err != nil {
-					log.Errorf("error sending pdu out on interface [%d](%s) by [%T]%v", msg.Ifi.Index(), msg.Ifi.Name(), err, err)
+					l.log.Errorf("error sending pdu out on interface [%d](%s) by [%T]%v", msg.Ifi.Index(), msg.Ifi.Name(), err, err)
 					if err.Error() == "network is down" {
 						l.CancelListenOn(msg.Ifi)
 						break
@@ -228,13 +231,13 @@ func (l *LLDPD) Listen() error {
 	for {
 		select {
 		case msg := <-l.recvChannel:
-			log.Info("msg", "incoming pdu on interface", "name", msg.Ifi.Name, "index", msg.Ifi.Index)
+			l.log.Info("msg", "incoming pdu on interface", "name", msg.Ifi.Name, "index", msg.Ifi.Index)
 			if resp, err := l.handleInputFn(msg); err == nil {
 				if resp != nil {
 					l.sendChannel <- resp
 				}
 			} else {
-				log.Info("msg", "respond input error", "error", err)
+				l.log.Info("msg", "respond input error", "error", err)
 			}
 			continue
 		}
@@ -255,7 +258,7 @@ func (l *LLDPD) packetFor(msg *Message) []byte {
 
 	b, err := msg.Frame.MarshalBinary()
 	if err != nil {
-		log.Error("msg", "error marshalling lldp frame", "error", err)
+		l.log.Error("msg", "error marshalling lldp frame", "error", err)
 		return nil
 	}
 
@@ -268,7 +271,7 @@ func (l *LLDPD) packetFor(msg *Message) []byte {
 	frame, err := f.MarshalBinary()
 
 	if err != nil {
-		log.Error("msg", "error marshalling ethernet frame", "error", err)
+		l.log.Error("msg", "error marshalling ethernet frame", "error", err)
 		return nil
 	}
 	return frame

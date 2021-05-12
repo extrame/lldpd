@@ -2,20 +2,21 @@ package lldpd
 
 import (
 	"github.com/extrame/raw"
-	"github.com/golang/glog"
 )
 
 type nlListener struct {
 	Messages chan *linkMessage
 	list     map[string]int32
+	log      Logger
 }
 
 // NewNLListener listens on rtnetlink for addition and removal
 // of interfaces and inform users on the Messages channel.
-func NewNLListener() *nlListener {
+func NewNLListener(log Logger) *nlListener {
 	l := &nlListener{
 		Messages: make(chan *linkMessage, 64),
 		list:     make(map[string]int32),
+		log:      log,
 	}
 	return l
 }
@@ -25,7 +26,7 @@ func (l *nlListener) Start() {
 	go func() {
 		err := l.Listen()
 		if err != nil {
-			glog.Error("msg", "could not listen", "error", err)
+			l.log.Error("msg", "could not listen", "error", err)
 		}
 	}()
 }
